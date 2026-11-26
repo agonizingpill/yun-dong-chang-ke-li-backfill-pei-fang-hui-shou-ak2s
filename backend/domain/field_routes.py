@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 from core.auth import actor, allow
 from core.roles import REVIEW, WRITE
 from domain import fieldwork
-from domain.field_schema import GridRef, MarkPatch, MeasureDepth
+from domain.field_schema import GridRef, MarkPatch, MeasureDepth, SeamReviewDepth
 
 
 router = APIRouter(prefix="/patches")
@@ -35,6 +35,12 @@ def lay(code: str, user=Depends(actor)):
 def measure(code: str, grid_ref: GridRef, form: MeasureDepth, user=Depends(actor)):
     allow(user, WRITE)
     return fieldwork.measure(code, grid_ref, form, user)
+
+
+@router.post("/{code}/cells/{grid_ref}/seam-review")
+def seam_review(code: str, grid_ref: GridRef, form: SeamReviewDepth, user=Depends(actor)):
+    allow(user, WRITE)
+    return fieldwork.seam_review(code, grid_ref, form, user)
 
 
 @router.post("/{code}/open")

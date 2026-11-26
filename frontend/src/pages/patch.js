@@ -9,8 +9,15 @@ const points = [
   ['first_mm','起点（mm）'], ['middle_mm','中点（mm）'], ['last_mm','终点（mm）'],
 ];
 const stage = p => p.opened_by ? '已签开场' : p.laid_by ? '已实铺' : '待实铺';
-const last = cell => cell.history.at(-1);
-const condition = cell => last(cell) === undefined ? '待测' : last(cell).passed ? '合格' : '待复测';
+const latestRoutine = cell => cell.latest_routine ?? null;
+const mm = value => value === null || value === undefined ? '—' : Number(value).toFixed(1) + ' mm';
+
+function condition(cell) {
+  if (cell.open_seam_review) return '待接缝复核';
+  const routine = latestRoutine(cell);
+  if (routine === null) return '待测';
+  return routine.passed ? '合格' : '待复测';
+}
 
 function planner(board, preferred, complete) {
   if (!board.eligible_tickets.length) return status('有已发料的称量单后可划定补坪范围。');
@@ -40,13 +47,36 @@ function planner(board, preferred, complete) {
 
 function cellHistory(cell) {
   const rows = [...cell.history].reverse().map(r => ({
-    id:r.id, depth:[r.first_mm,r.middle_mm,r.last_mm].join(' / '), spread:r.spread_mm,
+    id:r.id, kind:r.kind === 'seam_review' ? '接缝复核' : '常规测读',
+    depth:[r.first_mm,r.middle_mm,r.last_mm].join(' / '), spread:r.spread_mm,
     outcome:r.passed ? '合格' : '未通过', prior:r.repeat_of, by:r.measured_by,
   }));
   return dataView(rows,[
-    {name:'id',label:'读数号'},{name:'depth',label:'三点（mm）'},{name:'spread',label:'极差（mm）'},
-    {name:'outcome',label:'结论'},{name:'prior',label:'复测自'},{name:'by',label:'登记人'},
+    {name:'id',label:'读数号'},{name:'kind',label:'类型'},{name:'depth',label:'三点（mm）'},
+    {name:'spread',label:'极差（mm）'},{name:'outcome',label:'结论'},
+    {name:'prior',label:'关联读数'},{name:'by',label:'登记人'},
   ],'table');
+}
+
+function seamPanel(cell, opened) {
+  const routine = latestRoutine(cell);
+  const prediction = cell.seam_prediction_mm;
+  if (prediction === null || prediction === undefined) {
+    return el('p',{class:'seam-note'},'合格邻格不足两格，暂无接缝厚差预测。');
+  }
+  const observed = routine ? (routine.first_mm + routine.middle_mm + routine.last_mm) / 3 : null;
+  const children = [
+    el('dl',{class:'seam-figures'},
+      el('dt',{},'邻格预测厚度'), el('dd',{},mm(prediction)),
+      el('dt',{},'本格均值'), el('dd',{},mm(observed)),
+      el('dt',{},'偏离'), el('dd',{},mm(cell.seam_deviation_mm))),
+  ];
+  if (cell.open_seam_review) {
+    children.push(status('接缝厚差偏离超过 1 mm，须换人复核并过原标准后才能开场。','warn'));
+  } else if (opened) {
+    children.push(status('开场签字时已留住当时读数与预测。','ok'));
+  }
+  return el('div',{class:'seam-panel'},el('h4',{},'接缝厚差预测'),...children);
 }
 
 export async function patchPage(root, role) {
@@ -54,7 +84,9 @@ export async function patchPage(root, role) {
   const controls = el('section',{class:'ledger'});
   const panel = el('section',{class:'ledger patch-detail'});
   root.replaceChildren(titleBlock('现场 · 局部施工','补坪验收与开场',
-    '按发料单划定网格。每格在起点、中点、终点测厚，三点须在 12–16 mm 内且极差不超过 2 mm。'),
+    '按发料单划定网格。每格在起点、中点、终点测厚，三点须在 12–16 mm 内且极差不超过 2 mm。'
+    + '同区上下左右合格邻格不少于两格时，用其最新常规读数三点均值的中位数预测本格；'
+    + '本格虽合格但均值偏离预测超过 1 mm，须换人复核，复核读数不入预测。'),
   el('div',{class:'workspace-split'},panel,controls));
   let code = desk.activeTicket;
   let gridRef = null;
@@ -69,21 +101,36 @@ export async function patchPage(root, role) {
       el('button',{class:'quiet',type:'button','data-grid':cell.grid_ref,'data-condition':condition(cell),
         'aria-pressed':String(cell === current),onclick:() => { gridRef = cell.grid_ref; show(detail); }},
       cell.grid_ref + ' · ' + condition(cell))));
-    const body = el('div',{class:'patch-evidence'},el('h3',{},current.grid_ref + ' 测读记录'),cellHistory(current));
+    const body = el('div',{class:'patch-evidence'},
+      el('h3',{},current.grid_ref + ' 测读记录'),cellHistory(current),seamPanel(current, Boolean(work.opened_by)));
     panel.replaceChildren(el('div',{class:'section-label'},work.zone_code + ' · ' + stage(work)),
-      el('h2',{},work.code),el('p',{},'合格网格 ' + detail.passed_cells + ' / ' + detail.cells.length),mark,body);
+      el('h2',{},work.code),el('p',{},'可开场网格 ' + detail.passed_cells + ' / ' + detail.cells.length),mark,body);
     if (work.opened_by) {
       panel.append(status('已签开场 · ' + work.opened_by,'ok'));
     } else if (!work.laid_by && mayWrite(role)) {
       panel.append(actionForm('lay-patch',[],'登记实铺',async () => show(await mill.layPatch(work.code))));
     } else if (work.laid_by) {
-      const previous = last(current);
-      if (mayWrite(role) && !previous?.passed) {
+      const routine = latestRoutine(current);
+      if (current.open_seam_review) {
+        const trigger = current.open_seam_review;
+        if (mayWrite(role)) {
+          const fields = points.map(([name,label]) => input(name,label,{type:'number',min:'0',max:'35',step:'1'}));
+          panel.append(actionForm('seam-review-patch',[
+            el('p',{class:'seam-note'},'原测量人 ' + trigger.created_by
+              + ' 的读数触发复核，请由另一人按 12–16 mm、极差不超过 2 mm 的原标准复测。'),
+            el('div',{class:'depth-inputs'},fields)],
+            '提交接缝复核',async values => {
+              const readings = Object.fromEntries(points.map(([name]) => [name,Number(values.get(name))]));
+              show(await mill.seamReviewPatch(work.code,current.grid_ref,readings));
+            }));
+        }
+      } else if (mayWrite(role) && (routine === null || !routine.passed)) {
         const fields = points.map(([name,label]) => input(name,label,{type:'number',min:'0',max:'35',step:'1'}));
         panel.append(actionForm('measure-patch',[el('div',{class:'depth-inputs'},fields)],
-          previous ? '提交复测' : '提交测读',async values => {
+          routine ? '提交复测' : '提交测读',async values => {
             const readings = Object.fromEntries(points.map(([name]) => [name,Number(values.get(name))]));
-            show(await mill.measurePatch(work.code,current.grid_ref,{...readings,repeat_of:previous?.id ?? null}));
+            show(await mill.measurePatch(work.code,current.grid_ref,
+              {...readings,repeat_of:routine && !routine.passed ? routine.id : null}));
           }));
       }
       if (role === 'reviewer' && detail.passed_cells === detail.cells.length) {

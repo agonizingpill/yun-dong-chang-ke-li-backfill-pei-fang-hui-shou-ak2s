@@ -18,5 +18,6 @@ export const mill = {
   markPatch: (code, body) => request('/patches/' + code, body),
   layPatch: code => request('/patches/' + code + '/lay', {}),
   measurePatch: (code, grid, body) => request('/patches/' + code + '/cells/' + grid + '/measure', body),
+  seamReviewPatch: (code, grid, body) => request('/patches/' + code + '/cells/' + grid + '/seam-review', body),
   openPatch: code => request('/patches/' + code + '/open', {}),
 };

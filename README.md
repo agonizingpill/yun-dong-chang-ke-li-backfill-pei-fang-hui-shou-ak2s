@@ -46,7 +46,8 @@ docker compose exec -T backend python -m scripts.seed_demo
 8. 09:35，取消另一张未发称量单，袋批预占归零，实物余量保留。
 9. 09:45，补坪班按已发单在北区划出 A1、A2 两格。另一张发料单遇到 A1 占用，可在看板查看哪些网格能划定。
 10. 10:05，登记实铺。A1 读到 12、16、14 mm，虽各点在 12–16 mm 内，4 mm 极差超出 2 mm。现场修整后补录同格复测，原读数和签测人可回查。
-11. 10:20，A1、A2 的最新读数均合格。复核员签开场并释放这两个格位。发料扣减仍以 09:20 的流水为准。
+11. 10:20，A1、A2 的最新常规读数均合格。接缝厚差预测取同区上下左右合格邻格最新常规读数三点均值的中位数（至少两格可用）；本格虽合格但均值偏离预测超过 1 mm 时，补坪页挂出"待接缝复核"，须由非原测量人按 12–16 mm、极差不超过 2 mm 的原标准换人复核，复核读数不入预测。邻格常规读数更新会作废区内未解决复核单并重算待开场补坪单，已开场工单冻结。
+12. 10:35，全部格位常规测读合格且无待处理接缝复核，复核员签开场并释放格位，各格签字落账时的读数、预测与偏离随单留存。发料扣减仍以 09:20 的流水为准。
 
 ## 算法
 
@@ -54,6 +55,6 @@ docker compose exec -T backend python -m scripts.seed_demo
 
 回收袋批和新料按实际整数克数捏合，从场区比例上限和未锁余量可支持的最大回收量起向下，以 50 g 步长搜索。可行配方要求混料 CLR 与目标 CLR 的欧氏距离满足场区阈值。回收量相同优先距离较小，再按已排序批号重量确定性决胜。找不到方案则计算拒绝；更换候选料批后可重算。浏览器展示同一 Python 计算结果。
 
-`intake_tables.py`、`blend_tables.py`、`movements.py` 声明持久化结构。筛分在 `screening.py`，版本校验与锁料在 `planning.py`，审核发料与退订在 `scale.py`。补坪网格、占位和读数存于 `field_tables.py`，工单划定、实铺、测厚、复测及开场签字在 `fieldwork.py`。页面位于 `frontend/src/pages/`。枚举在 `backend/domain/rules.py` 和 `frontend/src/mill-state.js`，筛分、袋批和称量状态亦写入 SQLAlchemy 的 CHECK。角色由 `backend/core/roles.py`、`frontend/src/store.js` 共同定义。
+`intake_tables.py`、`blend_tables.py`、`movements.py` 声明持久化结构。筛分在 `screening.py`，版本校验与锁料在 `planning.py`，审核发料与退订在 `scale.py`。补坪网格、占位、读数和接缝复核存于 `field_tables.py`，工单划定、实铺、测厚、复测、接缝换人复核及开场签字在 `fieldwork.py`。读数分 `routine`（常规测厚，参与邻格预测）与 `seam_review`（接缝复核，永不入预测）两类；`patch_seam_reviews` 保留 `open` / `resolved` / `voided` 全过程，邻格常规读数更新会把待开场工单的未解决复核单作废并按最新读数整区重算，开场签字时把各格预测与偏离快照写入 `patch_cells`。表结构随 `metadata.create_all` 建表，既有演示库需 `docker compose down -v` 重建卷后再启动。页面位于 `frontend/src/pages/`。枚举在 `backend/domain/rules.py` 和 `frontend/src/mill-state.js`，筛分、袋批和称量状态亦写入 SQLAlchemy 的 CHECK。角色由 `backend/core/roles.py`、`frontend/src/store.js` 共同定义。
 
 源码使用 MIT 许可，见 `LICENSE`。

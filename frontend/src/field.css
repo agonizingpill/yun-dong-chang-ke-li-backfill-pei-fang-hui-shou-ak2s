@@ -70,7 +70,14 @@ section.flash { animation:entry .28s cubic-bezier(.14,1,.28,1) both; }
 .patch-detail h2,.patch-detail h3 { margin:0; }
 .patch-map { display:flex; flex-wrap:wrap; gap:6px; }
 .patch-map button[data-condition="待复测"] { color:#86351a; border-color:#a95636; }
+.patch-map button[data-condition="待接缝复核"] { color:#7a4a00; border-color:#c99305; background:#fdf3d8; }
 .patch-map button[data-condition="合格"] { border-color:var(--accent); }
 .patch-map button[aria-pressed=true] { outline:2px solid var(--accent); outline-offset:1px; }
 .patch-evidence { border-block-start:1px solid var(--line); padding-top:10px; }
 .depth-inputs { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:6px 0; }
+.seam-panel { margin-top:12px; padding:10px 12px; background:var(--tint); border:1px solid var(--line); }
+.seam-panel h4 { margin:0 0 6px; }
+.seam-figures { display:grid; grid-template-columns:auto 1fr; gap:4px 14px; margin:0; }
+.seam-figures dt { color:var(--muted, #666); }
+.seam-figures dd { margin:0; font-family:var(--mono),var(--body); }
+.seam-note { margin:6px 0; font-size:.92rem; }

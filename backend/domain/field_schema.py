@@ -25,3 +25,9 @@ class MeasureDepth(Input):
     middle_mm: Depth
     last_mm: Depth
     repeat_of: Annotated[int, Field(gt=0)] | None = None
+
+
+class SeamReviewDepth(Input):
+    first_mm: Depth
+    middle_mm: Depth
+    last_mm: Depth
